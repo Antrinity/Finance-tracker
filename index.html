@@ -73,6 +73,12 @@ input.field:focus,select.field:focus{border-color:#4F8EF7}
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <div id="sync-indicator" style="font-size:11px;color:#6B7280;display:none">Gespeichert ✓</div>
+      <select id="year-dropdown" onchange="setYear(parseInt(this.value))" style="
+        background:#22263A;color:#F1F5F9;border:1px solid #2E3350;
+        border-radius:10px;padding:6px 10px;font-size:14px;font-weight:700;
+        cursor:pointer;outline:none;appearance:none;-webkit-appearance:none;
+        text-align:center;min-width:72px
+      "></select>
       <div id="profile-avatar" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff"></div>
     </div>
   </div>
@@ -89,6 +95,7 @@ input.field:focus,select.field:focus{border-color:#4F8EF7}
   <div id="page-categories" class="page" style="padding:16px 20px"></div>
   <div id="page-recurring" class="page" style="padding:16px 20px"></div>
   <div id="page-profiles" class="page" style="padding:16px 20px"></div>
+  <div id="page-categories-mgmt" class="page" style="padding:16px 20px"></div>
 
   <!-- FAB -->
   <button class="fab" id="fab" onclick="openAddEntry()">+</button>
@@ -208,10 +215,20 @@ const COLORS = {
   muted:'#6B7280',text:'#F1F5F9',subtext:'#94A3B8'
 };
 const PROFILE_COLORS = ['#4F8EF7','#A78BFA','#34D399','#FBBF24','#F87171','#38BDF8','#FB923C'];
-const CATEGORIES = {
+const DEFAULT_CATEGORIES = {
   income:['Gehalt','Bonus','Kindergeld','Nebeneinkommen','Sonstiges'],
   expense:['Miete','Nebenkosten','Lebensmittel','Abonnements','Versicherung','Mobilität','Gesundheit','Freizeit','Kleidung','Baby','Sonstiges']
 };
+let CATEGORIES = {income:[...DEFAULT_CATEGORIES.income], expense:[...DEFAULT_CATEGORIES.expense]};
+function loadCustomCategories() {
+  try {
+    const raw = localStorage.getItem('finanztracker_cats');
+    if(raw) CATEGORIES = JSON.parse(raw);
+  } catch(e){}
+}
+function saveCustomCategories() {
+  localStorage.setItem('finanztracker_cats', JSON.stringify(CATEGORIES));
+}
 const ICONS = {
   'Gehalt':'💼','Bonus':'🎁','Kindergeld':'👶','Nebeneinkommen':'💡','Sonstiges':'📦',
   'Miete':'🏠','Nebenkosten':'💡','Lebensmittel':'🛒','Abonnements':'📱','Versicherung':'🛡️',
@@ -221,7 +238,7 @@ const fmt = n => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}
 const today = () => new Date().toISOString().split('T')[0];
 
 // ── State ─────────────────────────────────────────────────────
-let state = {profiles:[], activeProfile:0, tab:'dashboard', filterMonth:'', filterType:'all', entryType:'expense', recurring:false};
+let state = {profiles:[], activeProfile:0, tab:'dashboard', filterMonth:'', filterYear:2026, filterType:'all', entryType:'expense', recurring:false, newCatType:'expense'};
 
 // ── Storage ───────────────────────────────────────────────────
 function load() {
@@ -240,20 +257,23 @@ function save() {
 
 function showSyncIndicator() {
   const el = document.getElementById('sync-indicator');
+  if(!el) return;
   el.style.display='block';
   setTimeout(()=>el.style.display='none', 1800);
 }
 
 // ── Init ──────────────────────────────────────────────────────
 function init() {
+  loadCustomCategories();
   const saved = load();
   if (saved && saved.length) {
     state.profiles = saved;
   } else {
-    state.profiles = [{id:'p1',name:'André',color:PROFILE_COLORS[0],entries:[]}];
+    state.profiles = [{id:'p1',name:'Name',color:PROFILE_COLORS[0],entries:[]}];
     save();
   }
   // Set current month
+  state.filterYear = parseInt(today().slice(0,4));
   state.filterMonth = today().slice(0,7);
   renderAll();
 }
@@ -262,6 +282,7 @@ function init() {
 function renderAll() {
   renderHeader();
   renderProfileSwitcher();
+  renderYearPicker();
   renderMonthPicker();
   renderCurrentPage();
 }
@@ -291,36 +312,45 @@ function renderProfileSwitcher() {
   `;
 }
 
+function renderYearPicker() {
+  const el = document.getElementById('year-dropdown');
+  if(!el) return;
+  const years = [2024,2025,2026,2027,2028,2029,2030];
+  el.innerHTML = years.map(y=>`<option value="${y}" ${state.filterYear===y?'selected':''}>${y}</option>`).join('');
+}
+
 function renderMonthPicker() {
   const el = document.getElementById('month-picker');
-  const months = [];
-  for(let i=0;i<6;i++){
-    const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
-    months.push(d.toISOString().slice(0,7));
-  }
-  el.innerHTML = months.map(m=>`
-    <button onclick="setMonth('${m}')" style="
+  const months = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+  const labels = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  el.innerHTML = months.map((m,i)=>{
+    const key = `${state.filterYear}-${m}`;
+    const active = state.filterMonth===key;
+    return `<button onclick="setMonth('${key}')" style="
       padding:5px 12px;border-radius:20px;border:none;cursor:pointer;
       font-size:12px;font-weight:600;white-space:nowrap;
-      background:${state.filterMonth===m?COLORS.accent+'33':COLORS.card};
-      color:${state.filterMonth===m?COLORS.accent:COLORS.subtext}
-    ">${new Date(m+'-01').toLocaleDateString('de-DE',{month:'short',year:'numeric'})}</button>
-  `).join('');
+      background:${active?COLORS.accent+'33':COLORS.card};
+      color:${active?COLORS.accent:COLORS.subtext}
+    ">${labels[i]}</button>`;
+  }).join('');
 }
 
 function renderCurrentPage() {
-  ['dashboard','entries','categories','recurring','profiles'].forEach(t=>{
-    document.getElementById('page-'+t).classList.toggle('active', t===state.tab);
-    document.getElementById('tlabel-'+t).style.color = t===state.tab ? COLORS.accent : COLORS.muted;
+  ['dashboard','entries','categories','recurring','profiles','categories-mgmt'].forEach(t=>{
+    const page = document.getElementById('page-'+t);
+    const label = document.getElementById('tlabel-'+t);
+    if(page) page.classList.toggle('active', t===state.tab);
+    if(label) label.style.color = t===state.tab ? COLORS.accent : COLORS.muted;
   });
   const fab = document.getElementById('fab');
-  fab.style.display = (state.tab==='profiles'||state.tab==='categories') ? 'none' : 'flex';
+  fab.style.display = (state.tab==='profiles'||state.tab==='categories'||state.tab==='categories-mgmt') ? 'none' : 'flex';
 
   if(state.tab==='dashboard') renderDashboard();
   else if(state.tab==='entries') renderEntries();
   else if(state.tab==='categories') renderCategories();
   else if(state.tab==='recurring') renderRecurring();
   else if(state.tab==='profiles') renderProfiles();
+  else if(state.tab==='categories-mgmt') renderCategoriesMgmt();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────
@@ -546,14 +576,8 @@ function renderProfiles() {
       </div>
     `).join('')}
     <button class="btn btn-primary" onclick="openAddProfile()" style="margin-top:8px">+ Neues Profil</button>
-    <div class="card" style="margin-top:20px;background:${COLORS.accent}11;border:1px solid ${COLORS.accent}44">
-      <div style="font-size:13px;font-weight:700;color:${COLORS.accent};margin-bottom:6px">💾 Lokaler Speicher</div>
-      <div style="font-size:12px;color:${COLORS.subtext};line-height:1.6">
-        Daten werden lokal auf diesem Gerät gespeichert. Kein Internet nötig, keine Cloud. 
-        Firebase-Sync für mehrere Geräte kann später aktiviert werden.
-      </div>
-    </div>
     <button onclick="exportData()" class="btn btn-secondary" style="margin-top:12px">📤 Daten exportieren (JSON)</button>
+    <button onclick="setTab('categories-mgmt')" class="btn btn-secondary" style="margin-top:10px">🏷️ Kategorien verwalten</button>
   `;
 }
 
@@ -656,6 +680,95 @@ function renderCategories() {
   `;
 }
 
+
+// ── Categories Management ─────────────────────────────────────
+function renderCategoriesMgmt() {
+  const el = document.getElementById('page-categories-mgmt');
+
+  const renderList = (type) => {
+    const defaults = DEFAULT_CATEGORIES[type];
+    return CATEGORIES[type].map((cat,i) => {
+      const isDefault = defaults.includes(cat);
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid ${COLORS.border}">
+          <div style="font-size:20px;width:28px;text-align:center">${ICONS[cat]||'🏷️'}</div>
+          <div style="flex:1;font-size:15px;font-weight:600">${cat}</div>
+          ${isDefault
+            ? `<span style="font-size:11px;color:${COLORS.muted};font-weight:600">Standard</span>`
+            : `<button onclick="deleteCustomCategory('${type}','${cat}')" style="background:#F8717122;color:#F87171;border:none;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer">Löschen</button>`
+          }
+        </div>`;
+    }).join('');
+  };
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <button onclick="setTab('profiles')" style="background:${COLORS.card};border:none;border-radius:10px;padding:8px 12px;color:${COLORS.subtext};font-size:14px;cursor:pointer">← Zurück</button>
+      <div style="font-size:18px;font-weight:800">Kategorien</div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-label">Neue Kategorie</div>
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <button onclick="setCatType('expense')" id="ctype-expense" style="flex:1;padding:10px;border-radius:10px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:${COLORS.red}33;color:${COLORS.red}">Ausgabe</button>
+        <button onclick="setCatType('income')" id="ctype-income" style="flex:1;padding:10px;border-radius:10px;border:none;cursor:pointer;font-weight:700;font-size:13px;background:${COLORS.card};color:${COLORS.subtext}">Einnahme</button>
+      </div>
+      <div style="display:flex;gap:10px">
+        <input class="field" id="new-cat-name" type="text" placeholder="Kategoriename..." style="flex:1;margin:0"/>
+        <button onclick="addCustomCategory()" style="background:${COLORS.accent};color:#fff;border:none;border-radius:12px;padding:12px 16px;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap">+ Hinzufügen</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-label">Ausgabe-Kategorien</div>
+      ${renderList('expense')}
+    </div>
+    <div class="card">
+      <div class="section-label">Einnahme-Kategorien</div>
+      ${renderList('income')}
+    </div>
+  `;
+
+  // Set active type button style
+  setCatTypeVisual(state.newCatType||'expense');
+}
+
+function setCatType(type) {
+  state.newCatType = type;
+  setCatTypeVisual(type);
+}
+
+function setCatTypeVisual(type) {
+  const expBtn = document.getElementById('ctype-expense');
+  const incBtn = document.getElementById('ctype-income');
+  if(!expBtn||!incBtn) return;
+  expBtn.style.background = type==='expense' ? COLORS.red+'33' : COLORS.card;
+  expBtn.style.color = type==='expense' ? COLORS.red : COLORS.subtext;
+  incBtn.style.background = type==='income' ? COLORS.green+'33' : COLORS.card;
+  incBtn.style.color = type==='income' ? COLORS.green : COLORS.subtext;
+}
+
+function addCustomCategory() {
+  const name = document.getElementById('new-cat-name').value.trim();
+  if(!name) { showToast('Bitte Name eingeben', COLORS.red); return; }
+  const type = state.newCatType || 'expense';
+  if(CATEGORIES[type].includes(name)) { showToast('Kategorie existiert bereits', COLORS.yellow); return; }
+  CATEGORIES[type].push(name);
+  saveCustomCategories();
+  document.getElementById('new-cat-name').value='';
+  showToast(`"${name}" hinzugefügt ✓`);
+  renderCategoriesMgmt();
+}
+
+function deleteCustomCategory(type, name) {
+  showConfirm(`Kategorie "${name}" löschen?`, () => {
+    CATEGORIES[type] = CATEGORIES[type].filter(c=>c!==name);
+    saveCustomCategories();
+    showToast(`"${name}" gelöscht`, COLORS.yellow);
+    renderCategoriesMgmt();
+  });
+}
+
 // ── Delete profile ────────────────────────────────────────────
 function deleteProfile(i) {
   if(state.profiles.length<=1){ showToast('Letztes Profil kann nicht gelöscht werden', COLORS.red); return; }
@@ -681,8 +794,20 @@ function switchProfile(i) {
   renderAll();
 }
 
+function setYear(y) {
+  state.filterYear = y;
+  // Keep same month number, switch year
+  const mon = state.filterMonth.slice(5,7);
+  state.filterMonth = `${y}-${mon}`;
+  renderYearPicker();
+  renderYearPicker();
+  renderMonthPicker();
+  renderCurrentPage();
+}
+
 function setMonth(m) {
   state.filterMonth = m;
+  renderYearPicker();
   renderMonthPicker();
   renderCurrentPage();
 }
@@ -704,12 +829,15 @@ function openAddEntry() {
   document.getElementById('f-amount').value='';
   document.getElementById('f-date').value=today();
   document.getElementById('f-note').value='';
-  document.getElementById('interval-wrap').style.display='none';
-  document.getElementById('toggle-recurring').style.background=COLORS.border;
-  document.getElementById('toggle-knob').style.left='3px';
+  const iw = document.getElementById('interval-wrap');
+  const tr = document.getElementById('toggle-recurring');
+  const tk = document.getElementById('toggle-knob');
+  if(iw) iw.style.display='none';
+  if(tr) tr.style.background=COLORS.border;
+  if(tk) tk.style.left='3px';
   updateTypeButtons();
   updateCategoryOptions();
-  document.getElementById('sheet-entry').style.display='block';
+  const _ssheetentry = document.getElementById('sheet-entry'); if(_ssheetentry) _ssheetentry.style.display='block';
 }
 
 function setEntryType(t) {
@@ -720,10 +848,13 @@ function setEntryType(t) {
 
 function updateTypeButtons() {
   const isExp = state.entryType==='expense';
-  document.getElementById('btn-expense').style.background = isExp ? COLORS.red+'33' : COLORS.card;
-  document.getElementById('btn-expense').style.color = isExp ? COLORS.red : COLORS.subtext;
-  document.getElementById('btn-income').style.background = !isExp ? COLORS.green+'33' : COLORS.card;
-  document.getElementById('btn-income').style.color = !isExp ? COLORS.green : COLORS.subtext;
+  const btnExp = document.getElementById('btn-expense');
+  const btnInc = document.getElementById('btn-income');
+  if(!btnExp||!btnInc) return;
+  btnExp.style.background = isExp ? COLORS.red+'33' : COLORS.card;
+  btnExp.style.color = isExp ? COLORS.red : COLORS.subtext;
+  btnInc.style.background = !isExp ? COLORS.green+'33' : COLORS.card;
+  btnInc.style.color = !isExp ? COLORS.green : COLORS.subtext;
 }
 
 function updateCategoryOptions() {
@@ -733,9 +864,12 @@ function updateCategoryOptions() {
 
 function toggleRecurring() {
   state.recurring = !state.recurring;
-  document.getElementById('toggle-recurring').style.background = state.recurring ? COLORS.accent : COLORS.border;
-  document.getElementById('toggle-knob').style.left = state.recurring ? '20px' : '3px';
-  document.getElementById('interval-wrap').style.display = state.recurring ? 'block' : 'none';
+  const tog = document.getElementById('toggle-recurring');
+  const knob = document.getElementById('toggle-knob');
+  const wrap = document.getElementById('interval-wrap');
+  if(tog) tog.style.background = state.recurring ? COLORS.accent : COLORS.border;
+  if(knob) knob.style.left = state.recurring ? '20px' : '3px';
+  if(wrap) wrap.style.display = state.recurring ? 'block' : 'none';
 }
 
 function saveEntry() {
@@ -773,7 +907,7 @@ function deleteEntry(id) {
 function openEditProfile(i) {
   document.getElementById('ep-index').value = i;
   document.getElementById('ep-name').value = state.profiles[i].name;
-  document.getElementById('sheet-edit-profile').style.display='block';
+  const _ssheeteditprofile = document.getElementById('sheet-edit-profile'); if(_ssheeteditprofile) _ssheeteditprofile.style.display='block';
 }
 
 function saveEditProfile() {
@@ -790,7 +924,7 @@ function saveEditProfile() {
 // ── Profile form ──────────────────────────────────────────────
 function openAddProfile() {
   document.getElementById('p-name').value='';
-  document.getElementById('sheet-profile').style.display='block';
+  const _ssheetprofile = document.getElementById('sheet-profile'); if(_ssheetprofile) _ssheetprofile.style.display='block';
 }
 
 function saveProfile() {
@@ -817,7 +951,8 @@ function exportData() {
 
 // ── Helpers ───────────────────────────────────────────────────
 function closeSheet(id) {
-  document.getElementById(id).style.display='none';
+  const el = document.getElementById(id);
+  if(el) el.style.display='none';
 }
 
 
